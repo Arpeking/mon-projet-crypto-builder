@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Talent Protocol Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {font-family:Arial;background:#000;color:#0f0;text-align:center;padding:30px;}
+    #score {font-size:9rem;font-weight:900;margin:20px;}
+    .stat {font-size:2rem;margin:10px;}
+    input {padding:10px;font-size:1.5rem;width:300px;}
+    button {padding:15px 30px;font-size:1.5rem;margin:10px;cursor:pointer;}
+    table {margin:auto;border-collapse:collapse;width:80%;}
+    th,td {border:1px solid #0f0;padding:10px;text-align:center;}
+    .badge {width:200px;height:40px;margin:20px;}
+  </style>
+</head>
+<body>
+  <h1>🚀 Talent Protocol Tracker</h1>
+  <input id="username" placeholder="Ton pseudo (ex: lrifton6240)" value="lrifton6240">
+  <button onclick="load()">Charger</button>
+  <div id="loading">🔄 Chargement...</div>
+  
+  <div id="result" style="display:none;">
+    <div id="score">0</div>
+    <div class="stat">Rang mondial : <span id="rank">-</span></div>
+    <div class="stat">Évolution 24h : <span id="d24">?</span></div>
+    <div class="stat">Évolution 7j : <span id="d7">?</span></div>
+    <div class="stat">Évolution 30j : <span id="d30">?</span></div>
+    
+    <h2>Badge pour ton README</h2>
+    <img class="badge" id="badge" src="">
+    <p>Copie-colle :</p>
+    <code id="markdown"></code>
+    
+    <h2>Top 10 mondial</h2>
+    <table><thead><tr><th>Rang</th><th>Pseudo</th><th>Score</th></tr></thead><tbody id="top10"></tbody></table>
+  </div>
+
+<script>
+const API = "https://api.talentprotocol.com/api/v2";
+
+async function load() {
+  const user = document.getElementById("username").value.trim() || "lrifton6240";
+  document.getElementById("loading").style.display = "block";
+  document.getElementById("result").style.display = "none";
+
+  try {
+    // 1. Ton profil
+    const me = await fetch(`${API}/passports/${user}`).then(r=>r.json());
+    const score = me.passport.score;
+    const rank = me.passport.rank;
+
+    // 2. Historique (via subgraph public)
+    const hist = await fetch("https://api.thegraph.com/subgraphs/name/talent-protocol/talent-protocol", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({query: `{ user(id:"${me.passport.id}") { scores { timestamp value } } }`})
+    }).then(r=>r.json());
+
+    const scores = hist.data?.user?.scores || [];
+    const evo = calcEvo(scores);
+
+    // 3. Leaderboard top 10
+    const top = await fetch(`${API}/passports/leaderboard?limit=10`).then(r=>r.json());
+
+    // Affichage
+    document.getElementById("score").innerText = score;
+    document.getElementById("rank").innerText = `#${rank}`;
+    document.getElementById("d24").innerText = evo.d24;
+    document.getElementById("d7").innerText = evo.d7;
+    document.getElementById("d30").innerText = evo.d30;
+
+    // Badge SVG live
+    const badgeUrl = `https://img.shields.io/endpoint?url=${encodeURIComponent(location.href)}badge.json`;
+    document.getElementById("badge").src = badgeUrl;
+    document.getElementById("markdown").innerText = `![Talent Score](${badgeUrl})`;
+
+    // Top 10
+    const tbody = document.getElementById("top10");
+    tbody.innerHTML = "";
+    top.passports.forEach((p,i) => {
+      const tr = tbody.insertRow();
+      tr.innerHTML = `<td>${i+1}</td><td>${p.username}</td><td>${p.score}</td>`;
+    });
+
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("result").style.display = "block";
+
+  } catch(e) {
+    alert("Erreur : " + e.message + "\nVérifie ton pseudo !");
+    document.getElementById("loading").style.display = "none";
+  }
+}
+
+function calcEvo(scores) {
+  if (scores.length < 2) return {d24:"?", d7:"?", d30:"?"};
+  const now = Date.now()/1000;
+  const day = 86400;
+  const old24 = scores.find(s => now - s.timestamp < day);
+  const old7  = scores.find(s => now - s.timestamp < 7*day);
+  const old30 = scores.find(s => now - s.timestamp < 30*day);
+  const latest = scores[scores.length-1].value;
+  return {
+    d24: old24 ? `${latest - old24.value > 0 ? "+" : ""}${latest - old24.value}` : "?",
+    d7:  old7  ? `${latest - old7.value > 0 ? "+" : ""}${latest - old7.value}` : "?",
+    d30: old30 ? `${latest - old30.value > 0 ? "+" : ""}${latest - old30.value}` : "?"
+  };
+}
+
+// Auto-load au démarrage
+load();
+</script>
+</body>
+</html>
